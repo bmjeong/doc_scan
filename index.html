@@ -169,7 +169,8 @@ main{flex:1;overflow-y:auto;padding-block:6px 132px;padding-left:max(16px,env(sa
   </div>
   <div class="ed-ctrl" id="ctrlFx" hidden>
     <div class="chips" role="group" aria-label="필터">
-      <button class="chip" data-f="enhance">보정</button>
+      <button class="chip" data-f="auto">자동</button>
+      <button class="chip" data-f="color">컬러</button>
       <button class="chip" data-f="bw">흑백</button>
       <button class="chip" data-f="gray">회색조</button>
       <button class="chip" data-f="original">원본</button>
@@ -379,20 +380,38 @@ function background(L,W,H){
       const t=sm[y0*bw+x0]+(sm[y0*bw+x1]-sm[y0*bw+x0])*fx,b=sm[y1*bw+x0]+(sm[y1*bw+x1]-sm[y1*bw+x0])*fx;bg[y*W+x]=t+(b-t)*fy;}}
   return bg;
 }
+function normChannels(px,W,H){
+  // 채널(R,G,B)마다 따로 종이 배경을 추정해서 나눔 → 조명 색(노란빛)과 그림자를 함께 제거
+  const n=W*H,out=[];
+  for(let c=0;c<3;c++){
+    const a=new Float32Array(n);for(let i=0;i<n;i++)a[i]=px[i*4+c];
+    const bg=background(a,W,H);
+    for(let i=0;i<n;i++)a[i]*=Math.max(0.8,Math.min(3,238/Math.max(1,bg[i])));
+    out.push(a);
+  }
+  return out;
+}
+function isMono(N,W,H){
+  // 색이 뚜렷한 픽셀이 0.3% 미만이면 흑백 문서로 판단
+  const [R,G,B]=N,n=W*H,step=Math.max(1,Math.floor(n/200000));let tot=0,col=0;
+  for(let i=0;i<n;i+=step){const mx=Math.max(R[i],G[i],B[i]),mn=Math.min(R[i],G[i],B[i]);tot++;if(mx-mn>48&&mn<215)col++;}
+  return col/tot<0.003;
+}
 function applyFilter(px,W,H,f){
-  if(f==='original')return px;
-  const n=W*H,L=new Float32Array(n);
-  for(let i=0;i<n;i++)L[i]=0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2];
-  const bg=background(L,W,H),o=new Uint8ClampedArray(px.length);
+  if(f==='original'){const o=px;o.mode='original';return o;}
+  const n=W*H,N=normChannels(px,W,H),[R,G,B]=N,o=new Uint8ClampedArray(px.length);
   const curve=v=>(v-28)*255/(238-28);
+  let mode=f;
+  if(f==='auto')mode=isMono(N,W,H)?'gray':'color';
   for(let i=0;i<n;i++){
-    const gn=Math.max(0.8,Math.min(2.6,238/Math.max(1,bg[i]))),p=i*4;
-    if(f==='enhance'){for(let c=0;c<3;c++)o[p+c]=curve(px[p+c]*gn);}
-    else{const l=L[i]*gn;let v;
-      if(f==='gray')v=curve(l);
+    const p=i*4;
+    if(mode==='color'){o[p]=curve(R[i]);o[p+1]=curve(G[i]);o[p+2]=curve(B[i]);}
+    else{const l=0.299*R[i]+0.587*G[i]+0.114*B[i];let v;
+      if(mode==='gray')v=curve(l);
       else{const t=(l/238-0.58)/0.2;const s=Math.max(0,Math.min(1,t));v=255*s*s*(3-2*s);}
       o[p]=o[p+1]=o[p+2]=v;}
     o[p+3]=255;}
+  o.mode=mode;
   return o;
 }
 // ---------- minimal PDF writer (JPEG pages, A4) ----------
@@ -423,7 +442,8 @@ function buildPdf(pages){
 
 // ================= app =================
 const SRC_CAP=3000, OUT_CAP=2480, PREV_CAP=1100;
-const FX={enhance:'보정',bw:'흑백',gray:'회색조',original:'원본'};
+const FX={auto:'자동',color:'컬러',bw:'흑백',gray:'회색조',original:'원본'};
+const fxName=(f,m)=>f==='auto'&&m?`자동(${FX[m]})`:FX[f];
 const $=id=>document.getElementById(id);
 let pages=[], ed=null, uid=0;
 
@@ -455,7 +475,9 @@ function srcData(p){if(!p._data)p._data=p.src.getContext('2d',{willReadFrequentl
 
 function render(page,cap){ // -> canvas (warped, filtered, rotated)
   const [W,H]=outSize(page.q,cap);
-  const px=applyFilter(warp(srcData(page),page.src.width,page.src.height,page.q,W,H),W,H,page.f);
+  const eff=page.f==='auto'&&page.mode?page.mode:page.f; // 자동 판정은 미리보기에서 한 번 하고 저장 때도 같은 결과 사용
+  const px=applyFilter(warp(srcData(page),page.src.width,page.src.height,page.q,W,H),W,H,eff);
+  if(page.f==='auto'&&!page.mode)page.mode=px.mode;
   const a=document.createElement('canvas');a.width=W;a.height=H;a.getContext('2d').putImageData(new ImageData(px,W,H),0,0);
   if(!page.rot)return a;
   const r=document.createElement('canvas'),odd=page.rot%2;r.width=odd?H:W;r.height=odd?W:H;
@@ -479,7 +501,7 @@ function drawList(){
     const meta=document.createElement('div');meta.className='meta';
     const num=document.createElement('span');num.className='num mono';num.textContent=String(i+1).padStart(2,'0');
     const info=document.createElement('span');info.className='info';const [W,H]=fullDims(p);
-    info.innerHTML=`${FX[p.f]} · <span class="mono">${W}×${H}</span>`;
+    info.innerHTML=`${fxName(p.f,p.mode)} · <span class="mono">${W}×${H}</span>`;
     const up=document.createElement('button');up.className='mv';up.textContent='◀';up.setAttribute('aria-label','앞으로');up.disabled=i===0;
     up.onclick=()=>{[pages[i-1],pages[i]]=[pages[i],pages[i-1]];drawList();};
     const dn=document.createElement('button');dn.className='mv';dn.textContent='▶';dn.setAttribute('aria-label','뒤로');dn.disabled=i===pages.length-1;
@@ -511,11 +533,11 @@ function setStep(s){
   disp=null;fxCanvas=null;layout();
   if(!crop)refreshFx();
 }
-let fxCanvas=null;
+let fxCanvas=null,fxMode=null;
 function refreshFx(){
   const tmp={src:ed.page.src,_data:srcData(ed.page),q:ed.q,rot:ed.rot,f:ed.f};
-  fxCanvas=render(tmp,PREV_CAP);
-  const [W,H]=fullDims(tmp);$('hint').innerHTML=`저장 크기 <span class="mono">${W}×${H}px</span> · ${FX[ed.f]}`;
+  fxCanvas=render(tmp,PREV_CAP);fxMode=tmp.mode||null;
+  const [W,H]=fullDims(tmp);$('hint').innerHTML=`저장 크기 <span class="mono">${W}×${H}px</span> · ${fxName(ed.f,fxMode)}`;
   draw();
 }
 function layout(){
@@ -587,7 +609,7 @@ $('bDel').onclick=()=>{
   closeEditor();drawList();
 };
 $('bDone').onclick=()=>{
-  const p=ed.page;p.q=ed.q;p.rot=ed.rot;p.f=ed.f;p.thumb=thumbOf(fxCanvas||render(p,PREV_CAP));
+  const p=ed.page;p.q=ed.q;p.rot=ed.rot;p.f=ed.f;p.mode=ed.f==='auto'?fxMode:null;p.thumb=thumbOf(fxCanvas||render(p,PREV_CAP));
   if(ed.isNew)pages.push(p);
   closeEditor();drawList();
 };
@@ -631,7 +653,7 @@ $('bPdf').onclick=async()=>{
 };
 
 // ---------- add photos ----------
-async function newPage(src){const r=autoCorners(src);return {page:{id:++uid,src,q:r.q,rot:0,f:'enhance'},found:r.found};}
+async function newPage(src){const r=autoCorners(src);return {page:{id:++uid,src,q:r.q,rot:0,f:'auto'},found:r.found};}
 $('bCam').onclick=()=>$('cam').click();
 $('bPick').onclick=()=>$('pick').click();
 $('cam').onchange=async e=>{

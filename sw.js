@@ -1,6 +1,6 @@
 // 모서리 스캐너 service worker — 앱 파일을 캐시해서 오프라인에서도 열리게 합니다.
 // index.html을 고친 뒤에는 VERSION 숫자를 올려야 사용자 기기에 새 버전이 반영됩니다.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const APP = 'scanner-app-' + VERSION;
 const FONTS = 'scanner-fonts';
 const FILES = ['./', './index.html', './manifest.webmanifest',
