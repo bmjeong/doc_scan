@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2446E6">
+<meta name="description" content="문서 사진의 네 모서리를 찾아 반듯하게 펴고 PDF로 저장하는 스캐너">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="스캐너">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>모서리 스캐너</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* Layout: one-screen tool. Page grid on a light-table surface, fixed action bar at the bottom, full-screen dark editing stage. */
+:root{
+  --paper:#EEF0EE; --surface:#FFFFFF; --ink:#14181D; --muted:#5B646D; --line:#D6DBD8;
+  --accent:#2446E6; --accent-ink:#FFFFFF; --accent-soft:#E2E7FD;
+  --stage:#16191D; --stage-ink:#EDEFF1; --stage-muted:#9AA3AB; --stage-line:#2D3339;
+  --danger:#C2362B;
+  --f-body:"IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#111316; --surface:#1A1E23; --ink:#E8EBEE; --muted:#98A1AA; --line:#2B3137;
+    --accent:#7086FF; --accent-ink:#0B0E1A; --accent-soft:#1F2647;
+    --stage:#0A0C0E; --stage-ink:#EDEFF1; --stage-muted:#9AA3AB; --stage-line:#252B31;
+    --danger:#FF6B5E; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111316; --surface:#1A1E23; --ink:#E8EBEE; --muted:#98A1AA; --line:#2B3137;
+  --accent:#7086FF; --accent-ink:#0B0E1A; --accent-soft:#1F2647;
+  --stage:#0A0C0E; --stage-ink:#EDEFF1; --stage-muted:#9AA3AB; --stage-line:#252B31;
+  --danger:#FF6B5E; color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+header{padding-block:18px 10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+header h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em;text-wrap:balance}
+header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.06em}
+
+main{flex:1;overflow-y:auto;padding-block:6px 132px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:14px;max-width:960px}
+.card{display:flex;flex-direction:column;gap:8px;text-align:left;min-width:0}
+.thumb{position:relative;aspect-ratio:3/4;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.thumb img{max-width:100%;max-height:100%;display:block;box-shadow:0 1px 3px rgb(0 0 0 / .18)}
+.tag{position:absolute;top:6px;left:6px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:99px;background:var(--accent);color:var(--accent-ink)}
+.meta{display:flex;align-items:center;gap:8px;min-width:0}
+.num{font-size:13px;font-weight:500}
+.meta .info{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:var(--surface);font-size:13px;line-height:1}
+.mv:disabled{opacity:.35;cursor:default}
+
+.empty{max-width:420px;padding:28px 4px;color:var(--muted)}
+.empty h2{margin:0 0 6px;font-size:17px;color:var(--ink)}
+.empty ol{margin:10px 0 0;padding-left:20px;display:grid;gap:4px}
+
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
+  padding-top:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar-in{display:grid;grid-template-columns:1.4fr 1fr 1fr;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;max-width:960px}
+.btn{min-height:50px;border-radius:10px;font-weight:600;font-size:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:4px 8px;line-height:1.2}
+.btn small{font-weight:400;font-size:11px;opacity:.8}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.line{border:1px solid var(--line);background:var(--surface)}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* editor */
+.ed{position:fixed;inset:0;background:var(--stage);color:var(--stage-ink);display:flex;flex-direction:column;z-index:10;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.ed-top{display:flex;align-items:center;gap:12px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.ed-top .step{font-size:11px;color:var(--stage-muted);letter-spacing:.08em}
+.ed-top h2{margin:0;font-size:17px;font-weight:600;flex:1}
+.x{width:38px;height:38px;border-radius:50%;border:1px solid var(--stage-line);color:var(--stage-ink);font-size:18px}
+.stage{flex:1;position:relative;min-height:0}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+.hint{min-height:22px;font-size:13px;color:var(--stage-muted);text-align:center;padding:6px 16px 0}
+.hint.ok{color:#8FE3B0}
+.ed-ctrl{display:flex;flex-direction:column;gap:10px;padding-block:10px 14px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1}
+.sbtn{min-height:46px;border-radius:10px;border:1px solid var(--stage-line);color:var(--stage-ink);font-weight:500;font-size:14px;padding:4px 10px}
+.sbtn.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.sbtn.warn{color:var(--danger)}
+.chips{display:flex;gap:6px}
+.chip{flex:1;min-height:40px;border-radius:99px;border:1px solid var(--stage-line);color:var(--stage-ink);font-size:13px}
+.chip[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage);border-color:var(--stage-ink);font-weight:600}
+
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);padding:9px 16px;border-radius:99px;font-size:13px;z-index:30;max-width:calc(100% - 32px);text-align:center}
+.busy{position:fixed;inset:0;background:rgb(0 0 0 / .45);display:flex;align-items:center;justify-content:center;z-index:40;color:#fff;font-size:14px}
+.busy span{background:#16191D;padding:14px 20px;border-radius:12px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion: no-preference){ .card .thumb{transition:transform .12s} .card:active .thumb{transform:scale(.98)} }
+</style>
+</head>
+<body>
+
+
+<header>
+  <div>
+    <h1>모서리 스캐너</h1>
+    <p>문서를 찍으면 네 모서리를 찾아 반듯하게 펴 줍니다</p>
+  </div>
+  <div class="count mono" id="count">0장</div>
+</header>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden>
+    <h2>스캔한 장이 없습니다</h2>
+    <div>아래 <b>사진 찍기</b>로 시작하세요.</div>
+    <ol>
+      <li>문서를 어두운 바닥 위에 놓고 위에서 찍기</li>
+      <li>자동으로 찾은 모서리를 확인하고 필요하면 끌어서 조정</li>
+      <li>보정·흑백 중 고르고 PDF로 저장</li>
+    </ol>
+  </div>
+</main>
+
+<div class="bar">
+  <div class="bar-in">
+    <button class="btn primary" id="bCam">사진 찍기<small>카메라</small></button>
+    <button class="btn line" id="bPick">앨범<small>여러 장 가능</small></button>
+    <button class="btn line" id="bPdf">PDF 저장<small class="mono">A4 · 210×297</small></button>
+    <button class="btn line" id="bShare" hidden>공유<small>카톡·파일</small></button>
+  </div>
+</div>
+
+<input class="vh" type="file" id="cam" accept="image/*" capture="environment" aria-label="카메라로 찍기">
+<input class="vh" type="file" id="pick" accept="image/*" multiple aria-label="사진 선택">
+
+<section class="ed" id="ed" hidden aria-label="편집">
+  <div class="ed-top">
+    <div style="flex:1;min-width:0">
+      <div class="step mono" id="edStep">1 / 2</div>
+      <h2 id="edTitle">모서리 맞추기</h2>
+    </div>
+    <button class="x" id="edClose" aria-label="닫기">✕</button>
+  </div>
+  <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+  <div class="hint" id="hint"></div>
+  <div class="ed-ctrl" id="ctrlCrop">
+    <div class="row">
+      <button class="sbtn" id="bDetect">자동 감지</button>
+      <button class="sbtn" id="bFull">사진 전체</button>
+      <button class="sbtn go" id="bNext">다음</button>
+    </div>
+  </div>
+  <div class="ed-ctrl" id="ctrlFx" hidden>
+    <div class="chips" role="group" aria-label="필터">
+      <button class="chip" data-f="enhance">보정</button>
+      <button class="chip" data-f="bw">흑백</button>
+      <button class="chip" data-f="gray">회색조</button>
+      <button class="chip" data-f="original">원본</button>
+    </div>
+    <div class="row">
+      <button class="sbtn" id="bBack">← 모서리</button>
+      <button class="sbtn" id="bRot">회전 ↻</button>
+      <button class="sbtn" id="bJpg">JPG 저장</button>
+    </div>
+    <div class="row">
+      <button class="sbtn warn" id="bDel">삭제</button>
+      <button class="sbtn go" id="bDone" style="flex:2">완료</button>
+    </div>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+<div class="busy" id="busy" hidden><span id="busyMsg">처리 중…</span></div>
+
+<script>
+/*CORE*/
+// ---------- geometry ----------
+function cross(o,a,b){return (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);}
+function hull(pts){
+  pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  if(pts.length<3)return pts;
+  const lo=[],up=[];
+  for(const p of pts){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p);}
+  for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cross(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p);}
+  up.pop();lo.pop();return lo.concat(up);
+}
+function polyArea(q){let s=0;for(let i=0;i<q.length;i++){const a=q[i],b=q[(i+1)%q.length];s+=a[0]*b[1]-b[0]*a[1];}return Math.abs(s)/2;}
+function reduceTo4(h){
+  h=h.slice();
+  while(h.length>4){
+    let best=-1,bv=Infinity;
+    for(let i=0;i<h.length;i++){
+      const a=h[(i-1+h.length)%h.length],b=h[i],c=h[(i+1)%h.length];
+      const v=Math.abs(cross(a,b,c));
+      if(v<bv){bv=v;best=i;}
+    }
+    h.splice(best,1);
+  }
+  return h;
+}
+function orderQuad(q){
+  const cx=q.reduce((s,p)=>s+p[0],0)/4, cy=q.reduce((s,p)=>s+p[1],0)/4;
+  const s=q.slice().sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx));
+  let k=0;for(let i=1;i<4;i++)if(s[i][0]+s[i][1]<s[k][0]+s[k][1])k=i;
+  return [0,1,2,3].map(i=>s[(k+i)%4]); // tl,tr,br,bl
+}
+function quadOk(q,minArea){
+  if(q.length!==4)return false;
+  let sg=0;
+  for(let i=0;i<4;i++){
+    const a=q[(i+3)%4],b=q[i],c=q[(i+1)%4];
+    const cr=cross(a,b,c); if(Math.abs(cr)<1e-6)return false;
+    const s=Math.sign(cr); if(sg&&s!==sg)return false; sg=s;
+    const v1=[a[0]-b[0],a[1]-b[1]],v2=[c[0]-b[0],c[1]-b[1]];
+    const ang=Math.acos(Math.max(-1,Math.min(1,(v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(...v1)*Math.hypot(...v2)))))*180/Math.PI;
+    if(ang<40||ang>140)return false;
+  }
+  return polyArea(q)>=minArea;
+}
+// ---------- edge detection on small ImageData-like {data,width,height} ----------
+function blur5(src,w,h){
+  const k=[1,4,6,4,1],t=new Float32Array(w*h),o=new Float32Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0;for(let i=-2;i<=2;i++){const xx=Math.min(w-1,Math.max(0,x+i));s+=src[y*w+xx]*k[i+2];}t[y*w+x]=s/16;}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0;for(let i=-2;i<=2;i++){const yy=Math.min(h-1,Math.max(0,y+i));s+=t[yy*w+x]*k[i+2];}o[y*w+x]=s/16;}
+  return o;
+}
+function labelComps(mask,w,h){
+  // mask: Uint8Array 1 = include. returns {lab, comps:[{id,area,touch}]}
+  const lab=new Int32Array(w*h),st=new Int32Array(w*h),comps=[];let id=0;
+  for(let i=0;i<w*h;i++){
+    if(!mask[i]||lab[i])continue;
+    id++;let sp=0,area=0,touch=false;st[sp++]=i;lab[i]=id;
+    while(sp){const p=st[--sp];area++;const x=p%w,y=(p/w)|0;
+      if(x===0||y===0||x===w-1||y===h-1)touch=true;
+      if(x>0){const q=p-1;if(mask[q]&&!lab[q]){lab[q]=id;st[sp++]=q;}}
+      if(x<w-1){const q=p+1;if(mask[q]&&!lab[q]){lab[q]=id;st[sp++]=q;}}
+      if(y>0){const q=p-w;if(mask[q]&&!lab[q]){lab[q]=id;st[sp++]=q;}}
+      if(y<h-1){const q=p+w;if(mask[q]&&!lab[q]){lab[q]=id;st[sp++]=q;}}
+    }
+    comps.push({id,area,touch});
+  }
+  return {lab,comps};
+}
+function compHull(lab,w,h,id){
+  const pts=[];
+  for(let y=0;y<h;y++){let mn=-1,mx=-1;for(let x=0;x<w;x++)if(lab[y*w+x]===id){if(mn<0)mn=x;mx=x;}
+    if(mn>=0){pts.push([mn,y]);pts.push([mx+1,y]);pts.push([mn,y+1]);pts.push([mx+1,y+1]);}}
+  return hull(pts);
+}
+function otsu(g){
+  const hist=new Float64Array(256);for(const v of g)hist[Math.max(0,Math.min(255,v|0))]++;
+  const n=g.length;let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];
+  let sB=0,wB=0,best=0,t=128;
+  for(let i=0;i<256;i++){wB+=hist[i];if(!wB)continue;const wF=n-wB;if(!wF)break;sB+=i*hist[i];
+    const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>best){best=v;t=i;}}
+  return t;
+}
+function detectQuad(img){
+  const {data,width:w,height:h}=img,n=w*h;
+  const g0=new Float32Array(n);
+  for(let i=0;i<n;i++)g0[i]=0.299*data[i*4]+0.587*data[i*4+1]+0.114*data[i*4+2];
+  const g=blur5(g0,w,h);
+  const mag=new Float32Array(n);
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;
+    const gx=g[i-w+1]+2*g[i+1]+g[i+w+1]-g[i-w-1]-2*g[i-1]-g[i+w-1];
+    const gy=g[i+w-1]+2*g[i+w]+g[i+w+1]-g[i-w-1]-2*g[i-w]-g[i-w+1];
+    mag[i]=Math.hypot(gx,gy);}
+  const sorted=Float32Array.from(mag).sort();
+  const p99=Math.max(1,sorted[Math.floor(n*0.99)]);
+  const cands=[];
+  const addFromMask=(mask,expand)=>{
+    const {lab,comps}=labelComps(mask,w,h);
+    comps.filter(c=>!c.touch&&c.area>0.08*n).sort((a,b)=>b.area-a.area).slice(0,3).forEach(c=>{
+      let q=reduceTo4(compHull(lab,w,h,c.id));
+      if(q.length!==4)return;
+      if(expand){const cx=q.reduce((s,p)=>s+p[0],0)/4,cy=q.reduce((s,p)=>s+p[1],0)/4;
+        q=q.map(p=>{const d=Math.hypot(p[0]-cx,p[1]-cy)||1;return [p[0]+(p[0]-cx)/d*expand,p[1]+(p[1]-cy)/d*expand];});}
+      cands.push(orderQuad(q));
+    });
+  };
+  // 1) regions enclosed by strong edges
+  for(const f of [0.06,0.12,0.2,0.32]){
+    const thr=Math.max(6,f*p99),e=new Uint8Array(n);
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(mag[i]>thr){e[i]=1;e[i-1]=1;e[i+1]=1;e[i-w]=1;e[i+w]=1;}}
+    const m=new Uint8Array(n);for(let i=0;i<n;i++)m[i]=e[i]?0:1;
+    addFromMask(m,2);
+  }
+  // 2) bright regions (paper is usually lighter than the desk)
+  const t=otsu(g),hi=[];for(let i=0;i<n;i++)if(g[i]>t)hi.push(g[i]);
+  for(const tt of [t,hi.length>50?otsu(hi):t]){const m2=new Uint8Array(n);for(let i=0;i<n;i++)m2[i]=g[i]>tt?1:0;addFromMask(m2,0.5);}
+  // score: edge strength along the quad perimeter + area
+  const at=(x,y)=>{x=Math.round(x);y=Math.round(y);if(x<1||y<1||x>w-2||y>h-2)return 0;return mag[y*w+x];};
+  const lineMean=(a,b)=>{let s=0;const M=24;for(let j=0;j<M;j++){const tt=0.08+0.84*j/(M-1);s+=at(a[0]+(b[0]-a[0])*tt,a[1]+(b[1]-a[1])*tt);}return s/M;};
+  const refine=q=>{
+    const cx=q.reduce((s,p)=>s+p[0],0)/4,cy=q.reduce((s,p)=>s+p[1],0)/4,lines=[];
+    for(let k=0;k<4;k++){const a=q[k],b=q[(k+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1])||1;let nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;
+      if(nx*((a[0]+b[0])/2-cx)+ny*((a[1]+b[1])/2-cy)<0){nx=-nx;ny=-ny;}
+      let bd=0,bv=-1;for(let d=-6;d<=10;d++){const v=lineMean([a[0]+nx*d,a[1]+ny*d],[b[0]+nx*d,b[1]+ny*d])-0.004*Math.abs(d)*p99;if(v>bv){bv=v;bd=d;}}
+      lines.push([[a[0]+nx*bd,a[1]+ny*bd],[b[0]+nx*bd,b[1]+ny*bd]]);}
+    const isect=(l1,l2)=>{const [p,p2]=l1,[r,r2]=l2,d1=[p2[0]-p[0],p2[1]-p[1]],d2=[r2[0]-r[0],r2[1]-r[1]],den=d1[0]*d2[1]-d1[1]*d2[0];
+      if(Math.abs(den)<1e-9)return p2;const t=((r[0]-p[0])*d2[1]-(r[1]-p[1])*d2[0])/den;return [p[0]+d1[0]*t,p[1]+d1[1]*t];};
+    return [0,1,2,3].map(k=>isect(lines[(k+3)%4],lines[k]));
+  };
+  for(let i=0,L=cands.length;i<L;i++){const r=refine(cands[i]);if(quadOk(r,0.1*n))cands.push(r);}
+  let best=null,bs=0;
+  for(const q of cands){
+    if(!quadOk(q,0.1*n))continue;
+    const per=[];
+    for(let k=0;k<4;k++){const a=q[k],b=q[(k+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1]);const nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;
+      let s=0;const M=32;
+      for(let j=0;j<M;j++){const tt=0.06+0.88*j/(M-1),x=a[0]+(b[0]-a[0])*tt,y=a[1]+(b[1]-a[1])*tt;let mx=0;
+        for(let o=-3;o<=3;o++)mx=Math.max(mx,at(x+nx*o,y+ny*o));s+=Math.min(1,mx/p99);}
+      per.push(s/M);}
+    const es=0.5*Math.min(...per)+0.5*per.reduce((a,b)=>a+b,0)/4;
+    const sc=es+0.3*polyArea(q)/n;
+    if(es>0.3&&sc>bs){bs=sc;best=q;}
+  }
+  return best; // null if nothing convincing
+}
+// ---------- perspective warp ----------
+function homography(q){ // unit square -> quad (tl,tr,br,bl)
+  const [x0,y0]=q[0],[x1,y1]=q[1],[x2,y2]=q[2],[x3,y3]=q[3];
+  const dx1=x1-x2,dx2=x3-x2,dx3=x0-x1+x2-x3,dy1=y1-y2,dy2=y3-y2,dy3=y0-y1+y2-y3;
+  const det=dx1*dy2-dx2*dy1;
+  const G=det?(dx3*dy2-dx2*dy3)/det:0,H=det?(dx1*dy3-dx3*dy1)/det:0;
+  return {a:x1-x0+G*x1,b:x3-x0+H*x3,c:x0,d:y1-y0+G*y1,e:y3-y0+H*y3,f:y0,g:G,h:H};
+}
+function outSize(q,cap){
+  const d=(p,r)=>Math.hypot(p[0]-r[0],p[1]-r[1]);
+  let W=Math.max(d(q[0],q[1]),d(q[3],q[2])),H=Math.max(d(q[0],q[3]),d(q[1],q[2]));
+  const s=Math.min(1,cap/Math.max(W,H));
+  return [Math.max(8,Math.round(W*s)),Math.max(8,Math.round(H*s))];
+}
+function warp(src,sw,sh,q,W,H){
+  const M=homography(q),out=new Uint8ClampedArray(W*H*4);
+  for(let j=0;j<H;j++){const v=(j+0.5)/H;
+    for(let i=0;i<W;i++){const u=(i+0.5)/W,z=M.g*u+M.h*v+1;
+      let x=(M.a*u+M.b*v+M.c)/z-0.5,y=(M.d*u+M.e*v+M.f)/z-0.5;
+      if(x<0)x=0;if(y<0)y=0;if(x>sw-1)x=sw-1;if(y>sh-1)y=sh-1;
+      const x0=x|0,y0=y|0,x1=Math.min(sw-1,x0+1),y1=Math.min(sh-1,y0+1),fx=x-x0,fy=y-y0;
+      const p00=(y0*sw+x0)*4,p10=(y0*sw+x1)*4,p01=(y1*sw+x0)*4,p11=(y1*sw+x1)*4,o=(j*W+i)*4;
+      for(let c=0;c<3;c++){const t=src[p00+c]+(src[p10+c]-src[p00+c])*fx,b=src[p01+c]+(src[p11+c]-src[p01+c])*fx;out[o+c]=t+(b-t)*fy;}
+      out[o+3]=255;}}
+  return out;
+}
+// ---------- filters ----------
+function background(L,W,H){
+  const B=Math.max(8,Math.round(Math.max(W,H)/40)),bw=Math.ceil(W/B),bh=Math.ceil(H/B),blk=new Float32Array(bw*bh);
+  for(let by=0;by<bh;by++)for(let bx=0;bx<bw;bx++){
+    let s=0,c=0;const x1=Math.min(W,(bx+1)*B),y1=Math.min(H,(by+1)*B);
+    for(let y=by*B;y<y1;y++)for(let x=bx*B;x<x1;x++){s+=L[y*W+x];c++;}
+    const m=s/c;let s2=0,c2=0;
+    for(let y=by*B;y<y1;y++)for(let x=bx*B;x<x1;x++){const v=L[y*W+x];if(v>=m){s2+=v;c2++;}}
+    blk[by*bw+bx]=c2?s2/c2:m;}
+  // smooth: take max of 3x3 neighbourhood (ignore dark blocks full of text), then mean
+  const mx=new Float32Array(bw*bh),sm=new Float32Array(bw*bh);
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){let m=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&yy>=0&&xx<bw&&yy<bh)m=Math.max(m,blk[yy*bw+xx]);}mx[y*bw+x]=0.5*m+0.5*blk[y*bw+x];}
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){let s=0,c=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&yy>=0&&xx<bw&&yy<bh){s+=mx[yy*bw+xx];c++;}}sm[y*bw+x]=s/c;}
+  const bg=new Float32Array(W*H);
+  for(let y=0;y<H;y++){let gy=(y+0.5)/B-0.5;gy=Math.max(0,Math.min(bh-1,gy));const y0=gy|0,y1=Math.min(bh-1,y0+1),fy=gy-y0;
+    for(let x=0;x<W;x++){let gx=(x+0.5)/B-0.5;gx=Math.max(0,Math.min(bw-1,gx));const x0=gx|0,x1=Math.min(bw-1,x0+1),fx=gx-x0;
+      const t=sm[y0*bw+x0]+(sm[y0*bw+x1]-sm[y0*bw+x0])*fx,b=sm[y1*bw+x0]+(sm[y1*bw+x1]-sm[y1*bw+x0])*fx;bg[y*W+x]=t+(b-t)*fy;}}
+  return bg;
+}
+function applyFilter(px,W,H,f){
+  if(f==='original')return px;
+  const n=W*H,L=new Float32Array(n);
+  for(let i=0;i<n;i++)L[i]=0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2];
+  const bg=background(L,W,H),o=new Uint8ClampedArray(px.length);
+  const curve=v=>(v-28)*255/(238-28);
+  for(let i=0;i<n;i++){
+    const gn=Math.max(0.8,Math.min(2.6,238/Math.max(1,bg[i]))),p=i*4;
+    if(f==='enhance'){for(let c=0;c<3;c++)o[p+c]=curve(px[p+c]*gn);}
+    else{const l=L[i]*gn;let v;
+      if(f==='gray')v=curve(l);
+      else{const t=(l/238-0.58)/0.2;const s=Math.max(0,Math.min(1,t));v=255*s*s*(3-2*s);}
+      o[p]=o[p+1]=o[p+2]=v;}
+    o[p+3]=255;}
+  return o;
+}
+// ---------- minimal PDF writer (JPEG pages, A4) ----------
+function buildPdf(pages){
+  const enc=new TextEncoder(),parts=[],off=[];let pos=0;
+  const put=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);pos+=b.length;};
+  const f=v=>(+v.toFixed(2)).toString();
+  put(new Uint8Array([0x25,0x50,0x44,0x46,0x2D,0x31,0x2E,0x34,0x0A,0x25,0xE2,0xE3,0xCF,0xD3,0x0A]));
+  const N=2+pages.length*3;
+  off[1]=pos;put('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  off[2]=pos;put(`2 0 obj\n<< /Type /Pages /Kids [${pages.map((_,k)=>`${3+3*k} 0 R`).join(' ')}] /Count ${pages.length} >>\nendobj\n`);
+  pages.forEach((p,k)=>{
+    const po=3+3*k,co=4+3*k,io=5+3*k,land=p.w>p.h,PW=land?841.89:595.28,PH=land?595.28:841.89;
+    const s=Math.min(PW/p.w,PH/p.h),dw=p.w*s,dh=p.h*s,x=(PW-dw)/2,y=(PH-dh)/2;
+    off[po]=pos;put(`${po} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f(PW)} ${f(PH)}] /Resources << /XObject << /Im${k} ${io} 0 R >> >> /Contents ${co} 0 R >>\nendobj\n`);
+    const cs=`q ${f(dw)} 0 0 ${f(dh)} ${f(x)} ${f(y)} cm /Im${k} Do Q`;
+    off[co]=pos;put(`${co} 0 obj\n<< /Length ${enc.encode(cs).length} >>\nstream\n${cs}\nendstream\nendobj\n`);
+    off[io]=pos;put(`${io} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`);
+    put(p.jpeg);put('\nendstream\nendobj\n');
+  });
+  const xref=pos;let x=`xref\n0 ${N+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=N;i++)x+=String(off[i]).padStart(10,'0')+' 00000 n \n';
+  put(x+`trailer\n<< /Size ${N+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  const out=new Uint8Array(pos);let o=0;for(const b of parts){out.set(b,o);o+=b.length;}
+  return out;
+}
+/*ENDCORE*/
+
+// ================= app =================
+const SRC_CAP=3000, OUT_CAP=2480, PREV_CAP=1100;
+const FX={enhance:'보정',bw:'흑백',gray:'회색조',original:'원본'};
+const $=id=>document.getElementById(id);
+let pages=[], ed=null, uid=0;
+
+function toast(msg,ms=2400){const t=$('toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,ms);}
+function busy(msg){$('busyMsg').textContent=msg;$('busy').hidden=!msg;}
+const tick=()=>new Promise(r=>setTimeout(r,30));
+
+async function loadFile(file){
+  let bmp=null;
+  try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'});}catch(e){}
+  if(!bmp){bmp=await new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('img'))};im.src=u;});}
+  const w0=bmp.width,h0=bmp.height,s=Math.min(1,SRC_CAP/Math.max(w0,h0));
+  const c=document.createElement('canvas');c.width=Math.round(w0*s);c.height=Math.round(h0*s);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  if(bmp.close)bmp.close();
+  return c;
+}
+function autoCorners(src){
+  const s=Math.min(1,400/Math.max(src.width,src.height));
+  const c=document.createElement('canvas');c.width=Math.max(8,Math.round(src.width*s));c.height=Math.max(8,Math.round(src.height*s));
+  const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0,c.width,c.height);
+  let q=null;try{q=detectQuad(x.getImageData(0,0,c.width,c.height));}catch(e){console.error(e);}
+  const kx=src.width/c.width,ky=src.height/c.height;
+  if(q)return {found:true,q:q.map(p=>[Math.max(0,Math.min(src.width,p[0]*kx)),Math.max(0,Math.min(src.height,p[1]*ky))])};
+  return {found:false,q:fullQuad(src,0.06)};
+}
+function fullQuad(src,m=0){const W=src.width,H=src.height,a=W*m,b=H*m;return [[a,b],[W-a,b],[W-a,H-b],[a,H-b]];}
+function srcData(p){if(!p._data)p._data=p.src.getContext('2d',{willReadFrequently:true}).getImageData(0,0,p.src.width,p.src.height).data;return p._data;}
+
+function render(page,cap){ // -> canvas (warped, filtered, rotated)
+  const [W,H]=outSize(page.q,cap);
+  const px=applyFilter(warp(srcData(page),page.src.width,page.src.height,page.q,W,H),W,H,page.f);
+  const a=document.createElement('canvas');a.width=W;a.height=H;a.getContext('2d').putImageData(new ImageData(px,W,H),0,0);
+  if(!page.rot)return a;
+  const r=document.createElement('canvas'),odd=page.rot%2;r.width=odd?H:W;r.height=odd?W:H;
+  const x=r.getContext('2d');x.translate(r.width/2,r.height/2);x.rotate(page.rot*Math.PI/2);x.drawImage(a,-W/2,-H/2);return r;
+}
+function thumbOf(c){const s=Math.min(1,320/Math.max(c.width,c.height)),t=document.createElement('canvas');t.width=Math.round(c.width*s);t.height=Math.round(c.height*s);t.getContext('2d').drawImage(c,0,0,t.width,t.height);return t.toDataURL('image/jpeg',0.75);}
+function fullDims(p){const [W,H]=outSize(p.q,OUT_CAP);return p.rot%2?[H,W]:[W,H];}
+
+// ---------- page list ----------
+function drawList(){
+  const g=$('grid');g.textContent='';
+  $('count').textContent=pages.length+'장';
+  $('empty').hidden=pages.length>0;
+  $('bPdf').disabled=!pages.length;$('bShare').disabled=!pages.length;
+  pages.forEach((p,i)=>{
+    const card=document.createElement('div');card.className='card';
+    const th=document.createElement('button');th.className='thumb';th.setAttribute('aria-label',`${i+1}번째 장 편집`);
+    const im=document.createElement('img');im.src=p.thumb;im.alt='';th.appendChild(im);
+    
+    th.onclick=()=>openEditor(p,false,'fx');
+    const meta=document.createElement('div');meta.className='meta';
+    const num=document.createElement('span');num.className='num mono';num.textContent=String(i+1).padStart(2,'0');
+    const info=document.createElement('span');info.className='info';const [W,H]=fullDims(p);
+    info.innerHTML=`${FX[p.f]} · <span class="mono">${W}×${H}</span>`;
+    const up=document.createElement('button');up.className='mv';up.textContent='◀';up.setAttribute('aria-label','앞으로');up.disabled=i===0;
+    up.onclick=()=>{[pages[i-1],pages[i]]=[pages[i],pages[i-1]];drawList();};
+    const dn=document.createElement('button');dn.className='mv';dn.textContent='▶';dn.setAttribute('aria-label','뒤로');dn.disabled=i===pages.length-1;
+    dn.onclick=()=>{[pages[i+1],pages[i]]=[pages[i],pages[i+1]];drawList();};
+    meta.append(num,info,up,dn);card.append(th,meta);g.appendChild(card);
+  });
+}
+
+// ---------- editor ----------
+const cv=$('cv'),stage=$('stage');
+let view=null,drag=null,disp=null;
+function openEditor(page,isNew,step,found){
+  ed={page,isNew,q:page.q.map(p=>p.slice()),rot:page.rot,f:page.f,step:step||'crop',found};
+  $('ed').hidden=false;$('bDel').textContent=isNew?'버리기':'삭제';$('bDel').dataset.arm='';
+  setStep(ed.step);
+}
+function closeEditor(){$('ed').hidden=true;ed=null;disp=null;view=null;}
+function setStep(s){
+  ed.step=s;const crop=s==='crop';
+  $('edStep').textContent=crop?'1 / 2':'2 / 2';$('edTitle').textContent=crop?'모서리 맞추기':'보정과 저장';
+  $('ctrlCrop').hidden=!crop;$('ctrlFx').hidden=crop;
+  const h=$('hint');h.className='hint';
+  if(crop){
+    if(ed.found===true){h.textContent='모서리를 찾았습니다. 어긋난 꼭짓점은 끌어서 맞추세요.';h.classList.add('ok');}
+    else if(ed.found===false)h.textContent='모서리를 찾지 못했습니다. 네 꼭짓점을 문서 모서리로 끌어 주세요.';
+    else h.textContent='꼭짓점을 끌어서 문서 모서리에 맞추세요.';
+  }else h.textContent='';
+  document.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.f===ed.f));
+  disp=null;fxCanvas=null;layout();
+  if(!crop)refreshFx();
+}
+let fxCanvas=null;
+function refreshFx(){
+  const tmp={src:ed.page.src,_data:srcData(ed.page),q:ed.q,rot:ed.rot,f:ed.f};
+  fxCanvas=render(tmp,PREV_CAP);
+  const [W,H]=fullDims(tmp);$('hint').innerHTML=`저장 크기 <span class="mono">${W}×${H}px</span> · ${FX[ed.f]}`;
+  draw();
+}
+function layout(){
+  if(!ed)return;
+  const r=stage.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(1,Math.round(r.width*dpr));cv.height=Math.max(1,Math.round(r.height*dpr));
+  const src=ed.page.src,pad=26,s=Math.min((r.width-2*pad)/src.width,(r.height-2*pad)/src.height);
+  view={s,ox:(r.width-src.width*s)/2,oy:(r.height-src.height*s)/2,dpr,w:r.width,h:r.height};
+  disp=document.createElement('canvas');disp.width=Math.max(1,Math.round(src.width*s*dpr));disp.height=Math.max(1,Math.round(src.height*s*dpr));
+  const dx=disp.getContext('2d');dx.imageSmoothingQuality='high';dx.drawImage(src,0,0,disp.width,disp.height);
+  draw();
+}
+const css=k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+function draw(){
+  if(!ed||!view)return;
+  const x=cv.getContext('2d'),{s,ox,oy,dpr,w,h}=view;
+  x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  const acc=css('--accent');
+  if(ed.step==='fx'){
+    if(!fxCanvas)return;const k=Math.min((w-24)/fxCanvas.width,(h-24)/fxCanvas.height);
+    const dw=fxCanvas.width*k,dh=fxCanvas.height*k;x.imageSmoothingQuality='high';
+    x.shadowColor='rgba(0,0,0,.5)';x.shadowBlur=18;x.drawImage(fxCanvas,(w-dw)/2,(h-dh)/2,dw,dh);x.shadowBlur=0;return;
+  }
+  x.drawImage(disp,ox,oy,ed.page.src.width*s,ed.page.src.height*s);
+  const P=ed.q.map(p=>[ox+p[0]*s,oy+p[1]*s]);
+  x.beginPath();x.rect(0,0,w,h);x.moveTo(...P[0]);for(let i=1;i<4;i++)x.lineTo(...P[i]);x.closePath();
+  x.fillStyle='rgba(0,0,0,.5)';x.fill('evenodd');
+  x.beginPath();x.moveTo(...P[0]);for(let i=1;i<4;i++)x.lineTo(...P[i]);x.closePath();x.lineWidth=2;x.strokeStyle=acc;x.stroke();
+  P.forEach((p,i)=>{const on=drag&&drag.i===i;x.beginPath();x.arc(p[0],p[1],on?15:12,0,Math.PI*2);x.fillStyle=on?acc:'rgba(255,255,255,.95)';x.fill();x.lineWidth=3;x.strokeStyle=acc;x.stroke();});
+  if(drag){ // magnifier
+    const p=ed.q[drag.i],R=58,Z=2.6,left=P[drag.i][0]<w/2&&P[drag.i][1]<h/2+80;
+    const cx=left?w-R-14:R+14,cy=R+14;
+    x.save();x.beginPath();x.arc(cx,cy,R,0,Math.PI*2);x.clip();
+    x.fillStyle='#000';x.fillRect(cx-R,cy-R,2*R,2*R);
+    const sr=R/(s*Z);x.drawImage(ed.page.src,p[0]-sr,p[1]-sr,2*sr,2*sr,cx-R,cy-R,2*R,2*R);
+    x.strokeStyle=acc;x.lineWidth=1.5;x.beginPath();x.moveTo(cx-R,cy);x.lineTo(cx+R,cy);x.moveTo(cx,cy-R);x.lineTo(cx,cy+R);x.stroke();x.restore();
+    x.beginPath();x.arc(cx,cy,R,0,Math.PI*2);x.lineWidth=3;x.strokeStyle='#fff';x.stroke();
+  }
+}
+function evPos(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
+cv.addEventListener('pointerdown',e=>{
+  if(!ed||ed.step!=='crop'||!view)return;
+  const [mx,my]=evPos(e),{s,ox,oy}=view;let bi=-1,bd=56;
+  ed.q.forEach((p,i)=>{const d=Math.hypot(ox+p[0]*s-mx,oy+p[1]*s-my);if(d<bd){bd=d;bi=i;}});
+  if(bi<0)return;
+  const p=ed.q[bi];drag={i:bi,dx:ox+p[0]*s-mx,dy:oy+p[1]*s-my};cv.setPointerCapture(e.pointerId);draw();
+});
+cv.addEventListener('pointermove',e=>{
+  if(!drag)return;const [mx,my]=evPos(e),{s,ox,oy}=view,src=ed.page.src;
+  ed.q[drag.i]=[Math.max(0,Math.min(src.width,(mx+drag.dx-ox)/s)),Math.max(0,Math.min(src.height,(my+drag.dy-oy)/s))];draw();
+});
+const endDrag=()=>{if(drag){drag=null;draw();}};
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+new ResizeObserver(()=>{if(ed)layout();}).observe(stage);
+
+$('bDetect').onclick=()=>{const r=autoCorners(ed.page.src);ed.q=r.q;ed.found=r.found;setStep('crop');};
+$('bFull').onclick=()=>{ed.q=fullQuad(ed.page.src);ed.found=undefined;setStep('crop');};
+$('bNext').onclick=()=>{
+  if(!quadOk(ed.q,1)){toast('꼭짓점이 꼬였습니다. 네 점이 볼록한 사각형이 되게 맞춰 주세요.');return;}
+  setStep('fx');};
+$('bBack').onclick=()=>setStep('crop');
+$('bRot').onclick=()=>{ed.rot=(ed.rot+1)%4;refreshFx();};
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ed.f=c.dataset.f;document.querySelectorAll('.chip').forEach(k=>k.setAttribute('aria-pressed',k===c));refreshFx();});
+$('edClose').onclick=closeEditor;
+$('bDel').onclick=()=>{
+  const b=$('bDel');
+  if(!b.dataset.arm){b.dataset.arm='1';b.textContent=ed.isNew?'한 번 더 눌러 버리기':'한 번 더 눌러 삭제';return;}
+  if(!ed.isNew)pages=pages.filter(p=>p!==ed.page);
+  closeEditor();drawList();
+};
+$('bDone').onclick=()=>{
+  const p=ed.page;p.q=ed.q;p.rot=ed.rot;p.f=ed.f;p.thumb=thumbOf(fxCanvas||render(p,PREV_CAP));
+  if(ed.isNew)pages.push(p);
+  closeEditor();drawList();
+};
+$('bJpg').onclick=async()=>{
+  const tmp={src:ed.page.src,_data:srcData(ed.page),q:ed.q,rot:ed.rot,f:ed.f};
+  busy('JPG 만드는 중…');await tick();
+  try{const c=render(tmp,OUT_CAP);const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));busy('');save(blob,`scan_${stamp()}.jpg`);}
+  catch(e){busy('');toast('JPG를 만들지 못했습니다.');}
+};
+
+// ---------- save ----------
+function stamp(){const d=new Date(),z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;}
+function save(blob,name){
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),60000);toast('저장했습니다');
+}
+const canShareFiles=(()=>{try{return !!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'t.pdf',{type:'application/pdf'})]}));}catch(e){return false;}})();
+async function share(blob,name){
+  try{await navigator.share({files:[new File([blob],name,{type:blob.type})],title:name});}
+  catch(e){if(!e||e.name!=='AbortError')toast('공유하지 못했습니다');}
+}
+async function makePdf(){
+  const out=[];
+  for(let i=0;i<pages.length;i++){
+    busy(`PDF 만드는 중… ${i+1}/${pages.length}`);await tick();
+    const c=render(pages[i],OUT_CAP);const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.86));
+    out.push({w:c.width,h:c.height,jpeg:new Uint8Array(await blob.arrayBuffer())});
+  }
+  busy('');return new Blob([buildPdf(out)],{type:'application/pdf'});
+}
+$('bShare').hidden=!canShareFiles;
+$('bShare').onclick=async()=>{
+  if(!pages.length)return;
+  try{const b=await makePdf();await share(b,`scan_${stamp()}.pdf`);}catch(e){busy('');toast('PDF를 만들지 못했습니다.');}
+};
+$('bPdf').onclick=async()=>{
+  if(!pages.length)return;
+  try{const b=await makePdf();save(b,`scan_${stamp()}.pdf`);}
+  catch(e){console.error(e);busy('');toast('PDF를 만들지 못했습니다.');}
+};
+
+// ---------- add photos ----------
+async function newPage(src){const r=autoCorners(src);return {page:{id:++uid,src,q:r.q,rot:0,f:'enhance'},found:r.found};}
+$('bCam').onclick=()=>$('cam').click();
+$('bPick').onclick=()=>$('pick').click();
+$('cam').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  busy('모서리 찾는 중…');await tick();
+  try{const src=await loadFile(f);const {page,found}=await newPage(src);busy('');openEditor(page,true,'crop',found);}
+  catch(err){busy('');toast('사진을 열지 못했습니다.');}
+};
+$('pick').onchange=async e=>{
+  const files=[...e.target.files];e.target.value='';if(!files.length)return;
+  if(files.length===1){$('cam').onchange({target:{files,value:''}});return;}
+  let ok=0,miss=0;
+  for(let i=0;i<files.length;i++){
+    busy(`사진 처리 중… ${i+1}/${files.length}`);await tick();
+    try{const src=await loadFile(files[i]);const {page,found}=await newPage(src);if(!found)miss++;page.thumb=thumbOf(render(page,PREV_CAP));pages.push(page);ok++;}catch(err){}
+  }
+  busy('');drawList();
+  toast(miss?`${ok}장 추가 · ${miss}장은 모서리를 직접 맞춰 주세요`:`${ok}장 추가했습니다. 장을 눌러 확인할 수 있어요`,3600);
+};
+
+drawList();
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+
+</body>
+</html>
